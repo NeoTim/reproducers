@@ -1,0 +1,96 @@
+diff --git a/SIPcrack.c b/SIPcrack.c
+index eb27b99..57f87ea 100644
+--- a/SIPcrack.c
++++ b/SIPcrack.c
+@@ -432,6 +432,7 @@ static int parse_sniffed_line(login_t *login, char *buffer)
+   }
+ 
+   /* Return */
++  free(lines);
+ 
+   if(num_lines != 12)
+     return -1;
+diff --git a/SIPdump.c b/SIPdump.c
+index 08a8712..c6fc14e 100644
+--- a/SIPdump.c
++++ b/SIPdump.c
+@@ -485,7 +485,9 @@ static void sniff_logins(unsigned char *args,
+   const struct udp_header *udp;
+   unsigned char *payload;
+   conn_t connection;
+-  size_t size_ip=0, size_proto=0, size_payload=0;
++  size_t size_ip=0, size_proto=0;
++  unsigned char *payload_copy;
++  ssize_t size_payload=0;
+ 
+   /* Get ethernet header */
+ 
+@@ -510,6 +512,8 @@ static void sniff_logins(unsigned char *args,
+   switch(ip->ip_p) 
+   {
+   case IPPROTO_TCP:
++    if (SIZE_ETHERNET + size_ip + sizeof(struct tcp_header) > header->caplen)
++      return;
+     tcp = (struct tcp_header *)(packet + SIZE_ETHERNET + size_ip);
+     size_proto = TH_OFF(tcp)*4;
+     if (size_proto < 20) {
+@@ -533,12 +537,24 @@ static void sniff_logins(unsigned char *args,
+ 
+   payload = (unsigned char *)(packet + SIZE_ETHERNET + size_ip + size_proto);
+   size_payload = ntohs(ip->ip_len) - (size_ip + size_proto);
+-  payload[size_payload] = 0x00;
++
++  /* Bounds checking */
++  if (size_payload < 0 || SIZE_ETHERNET + size_ip + size_proto + size_payload> header->caplen) {
++    return;
++  }
+ 
+   /* If we have a payload send to payload and connection information to parser */
+ 
+   if(size_payload > 0) {
+-    parse_payload(&connection, payload, size_payload);
++    payload_copy = malloc(size_payload + 1);
++    if (!payload_copy) {
++      printf("malformed packet?, malloc call failed!\n");
++      return;
++    }
++    memcpy(payload_copy, payload, size_payload);
++    payload_copy[size_payload] = 0x00;
++    parse_payload(&connection, payload_copy, size_payload);
++    free(payload_copy);
+   }
+   
+   return;
+@@ -594,6 +610,7 @@ static int parse_sip_proto(char *out,
+ 
+   if(error || (!found && lines[num_lines-1][0] == 0x00)) {
+     free(lines[num_lines - 1]);
++    free(lines);
+     return -1;
+   }
+ 
+@@ -601,6 +618,7 @@ static int parse_sip_proto(char *out,
+ 
+   if(found) {
+     free(lines[num_lines - 1]);
++    free(lines);
+     return 1;  
+   }
+ 
+@@ -609,6 +627,7 @@ static int parse_sip_proto(char *out,
+   if(out_len - 1 < strlen(lines[num_lines - 1])) {
+     debug(("Buffer too small for line, ignoring..."));
+     free(lines[num_lines - 1]); 
++    free(lines);
+     return -1;
+   }
+ 
+@@ -617,6 +636,8 @@ static int parse_sip_proto(char *out,
+   /* Free last line */
+   free(lines[num_lines - 1]);
+ 
++  free(lines);
++
+   return 0;
+ }
+ 
