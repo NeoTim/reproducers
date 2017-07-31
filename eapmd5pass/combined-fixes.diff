@@ -1,0 +1,83 @@
+diff --git a/eapmd5pass.c b/eapmd5pass.c
+index 10b2a48..d959a9c 100644
+--- a/eapmd5pass.c
++++ b/eapmd5pass.c
+@@ -115,6 +115,13 @@ void assess_packet(char *user, struct pcap_pkthdr *h, u_int8_t *pkt)
+ 
+ 	dot11buf = (pkt + offset);
+ 
++	if (offset < 0)
++		return;
++
++	/* Check minimum packet length */
++	if (offset + sizeof(struct dot11hdr) > h->caplen)
++		return;
++
+ 	pcount++; /* Global packet counter */
+ 	if (__verbosity > 2) {
+ 		printf("Checking Frame: %ld....\n",pcount);
+@@ -197,6 +204,9 @@ void assess_packet(char *user, struct pcap_pkthdr *h, u_int8_t *pkt)
+ 	poffset += DOT2HDR_LEN;
+ 	plen -= DOT2HDR_LEN;
+ 
++	if (poffset + sizeof(struct ieee8022) > h->caplen)
++		return;
++
+ 	if (plen <= 0) {
+ 		if (__verbosity > 2) {
+ 			printf("\tDiscarding frame with partial 802.2 header.\n");
+@@ -444,6 +454,9 @@ int extract_eapusername(uint8_t *eap, int len, struct eapmd5pass_data *em)
+ 	/* 5 bytes for EAP header information without identity information */
+ 	usernamelen = (eaplen - 5);
+ 
++	if (usernamelen < 0)
++		return 1;
++
+ 	usernamelen = (eaplen > sizeof(em->username)) 
+ 			? sizeof(em->username) : usernamelen;
+ 	memcpy(em->username, (eap+5), usernamelen);
+@@ -684,7 +697,7 @@ int main(int argc, char *argv[])
+ 	}
+ 
+ 	/* Set non-blocking */
+-	if (pcap_setnonblock(p, PCAP_DONOTBLOCK, errbuf) != 0) {
++	if (!strlen(pcapfile) > 0 && pcap_setnonblock(p, PCAP_DONOTBLOCK, errbuf) != 0) {
+ 		fprintf(stderr, "Error placing pcap interface in non-blocking "
+ 			"mode.\n");
+ 		perror("pcap_setnonblock");
+@@ -702,7 +715,7 @@ int main(int argc, char *argv[])
+ 			fprintf(stderr, "Unable to determine offset from "
+ 				"radiotap header (%d).\n", offset);
+ 			usage();
+-			return(-1);
++			goto bailout;
+ 		}
+ 		break;
+ 
+@@ -721,7 +734,7 @@ int main(int argc, char *argv[])
+ 		default:
+ 		fprintf(stderr, "Unrecognized datalink type %d.\n", datalink);
+ 		usage();
+-		return(-1);
++		goto bailout;
+ 	}
+ 
+ 	/* Loop for each packet received */
+@@ -736,7 +749,7 @@ int main(int argc, char *argv[])
+ 		if (ret != 0) {
+ 			/* Error reading from packet capture file */
+ 			fprintf(stderr, "pcap_dispatch: %s\n", pcap_geterr(p));
+-			return -1;
++			goto bailout;
+ 		}
+ 
+ 	} else { /* live packet capture */
+@@ -767,6 +780,8 @@ int main(int argc, char *argv[])
+ 		printf("Total packets observed: %ld\n", pcount);
+ 	}
+ 
++bailout:
++
+ 	pcap_close(p);
+ 
+ 	if (em.recovered_pass > 0) {
